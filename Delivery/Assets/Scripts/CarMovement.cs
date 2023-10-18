@@ -2,87 +2,83 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
+[System.Serializable]
+public class AxleInfo
+{
+    public WheelCollider leftWheel;
+    public WheelCollider rightWheel;
+    public bool motor;
+    public bool steering;
+}
+
 public class CarMovement : MonoBehaviour
 {
-    public Transform centerOfMass;
-    public float maxSpeed = 100f;
-    public float maxSteerAngle = 30f;
-    public float acceleration = 10f;
-    public float brakePower = 20f;
-    
-    private Rigidbody rb;
-    private float currentSpeed;
-    private float steeringAngle;
-    private float verticalInput; // Declare verticalInput
+    public List<AxleInfo> axleInfos;
+    public float maxMotorTorque = 2000f; // Adjust for more or less acceleration
+    public float maxBrakeTorque = 4000f; // Adjust for strong braking
+    public float maxSteeringAngle = 30f; // Adjust for more responsive steering
+    public float handbrakeTorque = 10000f; // Adjust for handbrake effect
+    public float speedBoost = 2f; // Adjust for a speed boost
 
-    private void Start()
+    private bool isHandbrake = false;
+
+    // Finds the corresponding visual wheel
+    // Correctly applies the transform
+    public void ApplyLocalPositionToVisuals(WheelCollider collider)
     {
-        rb = GetComponent<Rigidbody>();
-
-        rb.centerOfMass = centerOfMass.position;
-    }
-
-    private void FixedUpdate()
-    {
-        HandleInput();
-        ApplySteering();
-        ApplyThrottle();
-        ApplyBrakes();
-        UpdateWheelVisuals();
-    }
-
-    private void HandleInput()
-    {
-        float horizontalInput = Input.GetAxis("Horizontal"); // A and D or Left and Right arrow keys
-        verticalInput = Input.GetAxis("Vertical"); // W and S or Up and Down arrow keys
-
-        currentSpeed = transform.InverseTransformDirection(rb.velocity).z;
-        steeringAngle = maxSteerAngle * horizontalInput;
-    }
-
-    private void ApplySteering()
-    {
-        for (int i = 0; i < 4; i++)
+        if (collider.transform.childCount == 0)
         {
-            WheelCollider wheel = transform.GetChild(i).GetComponent<WheelCollider>();
-            wheel.steerAngle = steeringAngle;
+            return;
         }
+
+        Transform visualWheel = collider.transform.GetChild(0);
+
+        Vector3 position;
+        Quaternion rotation;
+        collider.GetWorldPose(out position, out rotation);
+
+        visualWheel.transform.position = position;
+        visualWheel.transform.rotation = rotation;
     }
 
-    private void ApplyThrottle()
+    public void FixedUpdate()
     {
-        if (currentSpeed < maxSpeed)
-        {
-            for (int i = 0; i < 4; i++)
-            {
-                WheelCollider wheel = transform.GetChild(i).GetComponent<WheelCollider>();
-                wheel.motorTorque = acceleration * Time.fixedDeltaTime * verticalInput;
-            }
-        }
-    }
+        float motor = maxMotorTorque * Input.GetAxis("Vertical");
+        float steering = maxSteeringAngle * Input.GetAxis("Horizontal");
 
-    private void ApplyBrakes()
-    {
-        if (verticalInput < 0)
+        if (Input.GetButton("Fire1")) // For a handbrake effect
         {
-            for (int i = 0; i < 4; i++)
-            {
-                WheelCollider wheel = transform.GetChild(i).GetComponent<WheelCollider>();
-                wheel.brakeTorque = brakePower;
-            }
+            isHandbrake = true;
         }
         else
         {
-            for (int i = 0; i < 4; i++)
-            {
-                WheelCollider wheel = transform.GetChild(i).GetComponent<WheelCollider>();
-                wheel.brakeTorque = 0;
-            }
+            isHandbrake = false;
         }
-    }
 
-    private void UpdateWheelVisuals()
-    {
-        // You can add code to rotate and move the wheel mesh to match the WheelCollider's rotation and position.
+        foreach (AxleInfo axleInfo in axleInfos)
+        {
+            if (axleInfo.steering)
+            {
+                axleInfo.leftWheel.steerAngle = steering;
+                axleInfo.rightWheel.steerAngle = steering;
+            }
+            if (axleInfo.motor)
+            {
+                if (isHandbrake)
+                {
+                    axleInfo.leftWheel.brakeTorque = handbrakeTorque;
+                    axleInfo.rightWheel.brakeTorque = handbrakeTorque;
+                }
+                else
+                {
+                    axleInfo.leftWheel.brakeTorque = 0;
+                    axleInfo.rightWheel.brakeTorque = 0;
+                    axleInfo.leftWheel.motorTorque = motor;
+                    axleInfo.rightWheel.motorTorque = motor * speedBoost;
+                }
+            }
+            ApplyLocalPositionToVisuals(axleInfo.leftWheel);
+            ApplyLocalPositionToVisuals(axleInfo.rightWheel);
+        }
     }
 }
