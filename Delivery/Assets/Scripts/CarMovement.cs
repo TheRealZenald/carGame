@@ -2,83 +2,129 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
-[System.Serializable]
-public class AxleInfo
-{
-    public WheelCollider leftWheel;
-    public WheelCollider rightWheel;
-    public bool motor;
-    public bool steering;
-}
-
 public class CarMovement : MonoBehaviour
 {
-    public List<AxleInfo> axleInfos;
-    public float maxMotorTorque = 2000f; // Adjust for more or less acceleration
-    public float maxBrakeTorque = 4000f; // Adjust for strong braking
-    public float maxSteeringAngle = 30f; // Adjust for more responsive steering
-    public float handbrakeTorque = 10000f; // Adjust for handbrake effect
-    public float speedBoost = 2f; // Adjust for a speed boost
+    public Transform centerOfMass;
+    public WheelCollider[] wheelColliders;
+    public Transform[] wheelVisuals;
+    public float maxMotorTorque = 4000f;
+    public float maxBrakeTorque = 1000f;
+    public float maxSteeringAngle = 30f;
+    public float handbrakeTorque = 5000f;
+    public float driftStiffness = 0.2f;
+    public ParticleSystem tireSmoke;
 
-    private bool isHandbrake = false;
+    private Rigidbody rb;
+    private float currentSpeed;
+    private float driftFactor;
+    private bool isDrifting = false;
 
-    // Finds the corresponding visual wheel
-    // Correctly applies the transform
-    public void ApplyLocalPositionToVisuals(WheelCollider collider)
+    private void Start()
     {
-        if (collider.transform.childCount == 0)
-        {
-            return;
-        }
-
-        Transform visualWheel = collider.transform.GetChild(0);
-
-        Vector3 position;
-        Quaternion rotation;
-        collider.GetWorldPose(out position, out rotation);
-
-        visualWheel.transform.position = position;
-        visualWheel.transform.rotation = rotation;
+        rb = GetComponent<Rigidbody>();
+        rb.centerOfMass = centerOfMass.localPosition;
     }
 
-    public void FixedUpdate()
+    private void Update()
+    {
+        currentSpeed = rb.velocity.magnitude * 3.6f; // Convert m/s to km/h
+
+        CheckDrifting();
+    }
+
+    private void FixedUpdate()
     {
         float motor = maxMotorTorque * Input.GetAxis("Vertical");
         float steering = maxSteeringAngle * Input.GetAxis("Horizontal");
 
-        if (Input.GetButton("Fire1")) // For a handbrake effect
+        if (isDrifting)
         {
-            isHandbrake = true;
+            ApplyDriftStiffness();
+        }
+
+        ApplyMotorTorque(motor);
+        ApplySteering(steering);
+        ApplyBrakes();
+
+        UpdateWheelVisuals();
+    }
+
+    private void CheckDrifting()
+    {
+        if (Input.GetButton("Fire1") && currentSpeed > 30f) // For a handbrake effect
+        {
+            isDrifting = true;
+            if (tireSmoke != null)
+            {
+                tireSmoke.Play();
+            }
         }
         else
         {
-            isHandbrake = false;
+            isDrifting = false;
+            if (tireSmoke != null)
+            {
+                tireSmoke.Stop();
+            }
         }
+    }
 
-        foreach (AxleInfo axleInfo in axleInfos)
+    private void ApplyMotorTorque(float motor)
+    {
+        foreach (WheelCollider wheel in wheelColliders)
         {
-            if (axleInfo.steering)
-            {
-                axleInfo.leftWheel.steerAngle = steering;
-                axleInfo.rightWheel.steerAngle = steering;
-            }
-            if (axleInfo.motor)
-            {
-                if (isHandbrake)
-                {
-                    axleInfo.leftWheel.brakeTorque = handbrakeTorque;
-                    axleInfo.rightWheel.brakeTorque = handbrakeTorque;
-                }
-                else
-                {
-                    axleInfo.leftWheel.brakeTorque = 0;
-                    axleInfo.rightWheel.brakeTorque = 0;
-                    axleInfo.leftWheel.motorTorque = motor;
-                    axleInfo.rightWheel.motorTorque = motor * speedBoost;
-                }
-            }
-            ApplyLocalPositionToVisuals(axleInfo.leftWheel);
-            ApplyLocalPositionToVisuals(axleInfo.rightWheel);
+            wheel.motorTorque = motor;
         }
+    }
+
+    private void ApplySteering(float steering)
+    {
+        foreach (WheelCollider wheel in wheelColliders)
+        {
+            wheel.steerAngle = steering;
+        }
+    }
+
+    private void ApplyBrakes()
+    {
+        foreach (WheelCollider wheel in wheelColliders)
+        {
+            if (isDrifting)
+            {
+                wheel.brakeTorque = handbrakeTorque;
+            }
+            else
+            {
+                wheel.brakeTorque = maxBrakeTorque;
+            }
+        }
+    }
+
+    private void ApplyDriftStiffness()
+    {
+        foreach (WheelCollider wheel in wheelColliders)
+        {
+            WheelFrictionCurve curve = wheel.sidewaysFriction;
+            curve.stiffness = driftStiffness;
+            wheel.sidewaysFriction = curve;
+        }
+    }
+
+    private void UpdateWheelVisuals()
+    {
+        for (int i = 0; i < wheelColliders.Length; i++)
+        {
+            UpdateSingleWheelVisual(wheelColliders[i], wheelVisuals[i]);
+        }
+    }
+
+    private void UpdateSingleWheelVisual(WheelCollider wheelCollider, Transform wheelVisual)
+    {
+        // Match the visual wheel's position and rotation with the WheelCollider.
+        Vector3 position;
+        Quaternion rotation;
+        wheelCollider.GetWorldPose(out position, out rotation);
+        wheelVisual.position = position;
+        wheelVisual.rotation = rotation;
     }
 }
